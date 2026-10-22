@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decovo"
+version = "2.0.0"
+description = "Unified CaImAn CNMF-E 1-photon calcium imaging pipeline (AVI & multi-page TIFF, local CLI/Dashboard & Google Colab)"
+readme = "README_caiman_pipeline.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "scipy",
+    "tifffile",
+    "PyYAML",
+    "h5py",
+    "matplotlib",
+    "psutil",
+]
+
+[project.optional-dependencies]
+dashboard = [
+    "panel",
+    "bokeh",
+    "holoviews",
+]
+colab = [
+    "ipywidgets",
+]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+decovo = "decovo.cli:main"
+
+[tool.setuptools]
+packages = ["decovo"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+decovo = ["presets/*.yaml"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+

@@ -1,0 +1,63 @@
+# Decovo v2 Default Preset for 1-Photon Miniscope Calcium Imaging (CNMF-E)
+# Single source of truth used by Local CLI, Local Dashboard, and Google Colab.
+
+acquisition:
+  # Default frame rate in Hz. If TIFF metadata contains frame rate, it is read
+  # and displayed for user verification; user-selected frame_rate is used.
+  frame_rate: 20.0
+  decay_time: 0.4
+
+preprocess:
+  spatial_downsample: 0.6
+  temporal_downsample: 1.0
+  remove_background: true
+  bg_filter_size: 4
+  bg_scale: 0.6
+  chunk_frames: 1000
+
+motion:
+  enabled: true
+  pw_rigid: false
+  gSig_filt: [3, 3]
+  max_shifts: [4, 4]
+  strides: [48, 48]
+  overlaps: [24, 24]
+  max_deviation_rigid: 3
+  border_nan: copy
+
+cnmfe:
+  gSig: 3.0
+  # Validated default: gSiz = 4 * gSig + 1 (= 13 for gSig = 3)
+  gSiz: 13
+  merge_thr: 0.7
+  p: 1
+  tsub: 2
+  ssub: 1
+  rf: 40
+  stride: 20
+  nb: 0
+  ssub_B: 2
+  ring_size_factor: 1.4
+  method_deconvolution: oasis
+
+thresholds:
+  # Mode: auto_heuristic | auto_grid | auto_both | manual
+  mode: auto_heuristic
+  min_corr: null
+  min_pnr: null
+  grid_n_frames: 2000
+  grid_corr_steps: 3
+  grid_pnr_steps: 3
+
+evaluation:
+  min_SNR: 3.0
+  rval_thr: 0.95
+  use_cnn: false
+
+export:
+  hdf5: true
+  mat: true
+  figures: true
+  save_motion_corrected: false
+  cleanup_mmap: false
+  convert_mmap_to_npy: false
