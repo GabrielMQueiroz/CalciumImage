@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+*.mmap
+results_*/
+data_memmap.npy
+debug_*.txt
+test_serve_debug.py

@@ -33,7 +33,7 @@ _BOKEH_OK = False
 try:
     import panel as pn
 
-    pn.extension("bokeh", sizing_mode="stretch_width", notifications=True)
+    pn.extension(sizing_mode="stretch_width", notifications=True)
     _PANEL_OK = True
 except Exception as e:
     logger.debug("Panel not available: %s", e)
@@ -1217,3 +1217,27 @@ def create_dashboard():
         main=[header, tabs],
         sidebar_width=380,
     )
+
+
+def main():
+    """Command-line entry point to launch the Decovo dashboard."""
+    if not _PANEL_OK:
+        print("ERROR: Panel is required. Install with: pip install panel")
+        sys.exit(1)
+    if any(arg in sys.argv for arg in ("--show", "serve")):
+        dashboard = create_dashboard()
+        dashboard.servable()
+    else:
+        print("Starting Decovo v2 CaImAn Interactive Dashboard...")
+        print("The dashboard will open in your browser. Press Ctrl+C to stop.\n")
+        dashboard = create_dashboard()
+        dashboard.show(port=5007, open=True)
+
+
+if __name__.startswith("bokeh_app_") or (_PANEL_OK and getattr(pn.state, "curdoc", None) is not None):
+    # Support `panel serve decovo/dashboard.py`
+    dashboard = create_dashboard()
+    dashboard.servable()
+elif __name__ == "__main__":
+    main()
+
