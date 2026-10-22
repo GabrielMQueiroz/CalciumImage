@@ -81,19 +81,20 @@ def run_grid_search(
     n_total = images.shape[0]
     n_use = min(config.grid_n_frames, n_total)
     if n_use < n_total:
-        indices = np.linspace(0, n_total - 1, n_use, dtype=int)
-        images_sub = images[indices]
-    else:
-        images_sub = images
-
-    dims = images.shape[1:]
-    min_dim = min(dims)
-    if min_dim <= 2 * int(config.rf) + int(config.stride):
+        # Contiguous slice preserves np.memmap and C-order Yr layout required by CNMF.fit
+        images_sub = images[:n_use]
         eff_rf = None
         eff_stride = None
     else:
-        eff_rf = int(config.rf)
-        eff_stride = int(config.stride)
+        images_sub = images
+        dims = images.shape[1:]
+        min_dim = min(dims)
+        if min_dim <= 2 * int(config.rf) + int(config.stride):
+            eff_rf = None
+            eff_stride = None
+        else:
+            eff_rf = int(config.rf)
+            eff_stride = int(config.stride)
 
     total_combos = len(corr_range) * len(pnr_range)
     results: Dict[Tuple[float, float], dict] = {}
@@ -191,6 +192,7 @@ def run_grid_search(
                     "  [%d/%d] corr=%.3f, pnr=%.2f -> %d/%d neurons (score=%.2f)",
                     combo_idx, total_combos, mc_round, mp_round, n_accepted, n_total_comp, score
                 )
+                del cnm_gs
             except Exception as e:
                 logger.warning(
                     "  [%d/%d] corr=%.3f, pnr=%.2f -> FAILED: %s",
@@ -205,6 +207,7 @@ def run_grid_search(
 
             progress.update(combo_idx)
 
+    del images_sub
     logger.info("Grid search best: min_corr=%.3f, min_pnr=%.2f (score=%.2f)", best_corr, best_pnr, best_score)
     progress.end_stage()
     return best_corr, best_pnr, results

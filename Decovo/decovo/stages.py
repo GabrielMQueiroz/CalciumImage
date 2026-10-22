@@ -540,6 +540,13 @@ def stage_extract_and_evaluate(
         n_accepted = 0
         n_rejected = 0
 
+    # Detach any ndarray views into the underlying np.memmap (e.g. estimates.b) so Windows file locks are released
+    for attr_k, attr_v in list(vars(cnm.estimates).items()):
+        if isinstance(attr_v, np.ndarray) and attr_v.base is not None:
+            setattr(cnm.estimates, attr_k, np.array(attr_v, copy=True))
+    if hasattr(cnm, "mmap_file"):
+        cnm.mmap_file = None
+
     # Attach Cn and dims directly on estimates for CleanMiniscope Cell Curator GUI
     cnm.estimates.Cn = cn_filter
     cnm.estimates.dims = tuple(dims)
