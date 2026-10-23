@@ -56,6 +56,14 @@ class Session:
     timing: Dict[str, float] = field(default_factory=dict)
     skipped_stages: List[str] = field(default_factory=list)
 
+    @property
+    def cn(self) -> np.ndarray:
+        return self.cn_filter
+
+    @cn.setter
+    def cn(self, val: np.ndarray) -> None:
+        self.cn_filter = val
+
 
 @dataclass
 class PipelineResult:
@@ -78,6 +86,14 @@ class PipelineResult:
     session: Optional[Session] = None
     skipped_stages: List[str] = field(default_factory=list)
     hdf5_path: Optional[str] = None
+
+    @property
+    def cn(self) -> Optional[np.ndarray]:
+        return self.cn_filter
+
+    @cn.setter
+    def cn(self, val: Optional[np.ndarray]) -> None:
+        self.cn_filter = val
 
 
 # Alias matching implementation_plan.md

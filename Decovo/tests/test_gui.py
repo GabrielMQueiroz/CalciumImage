@@ -133,6 +133,12 @@ def test_gui_seed_preview():
         app._update_seed_preview()
         assert len(app._seed_coords) == 3
         assert "Seeds: 3" in app.lbl_seed_count.cget("text")
+
+        # Also test with cn_filter as created by actual pipeline Session
+        app.session = SimpleNamespace(cn_filter=cn, pnr=pnr)
+        app._update_seed_preview()
+        assert len(app._seed_coords) == 3
+        assert "Seeds: 3" in app.lbl_seed_count.cget("text")
     finally:
         app.destroy()
 
@@ -210,4 +216,35 @@ def test_gui_theme_toggle():
         assert app.BG_MAIN == "#1e1e1e"
     finally:
         app.destroy()
+
+
+def test_gui_auto_load_existing_stage_a(tmp_path):
+    """Test auto-loading existing Cn.npy and PNR.npy from results_decovo directory."""
+    try:
+        root = tk.Tk()
+        root.destroy()
+    except tk.TclError:
+        pytest.skip("Tkinter display not available in current environment")
+
+    rec_file = tmp_path / "recording.tif"
+    rec_file.write_bytes(b"dummy")
+    res_dir = tmp_path / "results_decovo"
+    res_dir.mkdir()
+
+    cn_data = np.random.rand(40, 50).astype(np.float32)
+    pnr_data = np.random.rand(40, 50).astype(np.float32) * 12.0
+    np.save(res_dir / "Cn.npy", cn_data)
+    np.save(res_dir / "PNR.npy", pnr_data)
+
+    app = DecovoApp()
+    try:
+        app.set_input_path(rec_file)
+        assert app.session is not None
+        assert app.session_cn is not None
+        assert app.session_pnr is not None
+        assert np.array_equal(app.session_cn, cn_data)
+        assert np.array_equal(app.session_pnr, pnr_data)
+    finally:
+        app.destroy()
+
 

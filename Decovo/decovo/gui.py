@@ -168,6 +168,10 @@ class DecovoApp(tk.Tk):
         self._build_notebook()
         self._build_status_bar()
 
+        # Initialize Curator plots
+        self._init_fov_plot()
+        self._init_detail_plot()
+
         # Attach logging handler
         self._setup_logging()
 
@@ -190,6 +194,60 @@ class DecovoApp(tk.Tk):
                 self.load_hdf5(str(p))
             else:
                 self.set_input_path(p)
+
+    @property
+    def session_cn(self) -> Optional[np.ndarray]:
+        """Returns correlation summary image from active session."""
+        if self.session is None:
+            return None
+        return getattr(self.session, "cn", getattr(self.session, "cn_filter", None))
+
+    @property
+    def session_pnr(self) -> Optional[np.ndarray]:
+        """Returns PNR summary image from active session."""
+        if self.session is None:
+            return None
+        return getattr(self.session, "pnr", None)
+
+    def _check_and_load_existing_stage_a(self) -> bool:
+        """Check if Stage A outputs (Cn.npy, PNR.npy) already exist in results directory and load them."""
+        out_dir = self.current_output_dir or Path(self.ent_output_dir.get().strip())
+        cn_file = out_dir / "Cn.npy"
+        pnr_file = out_dir / "PNR.npy"
+        if cn_file.is_file() and pnr_file.is_file():
+            try:
+                cn_arr = np.load(cn_file)
+                pnr_arr = np.load(pnr_file)
+                if self.session is None:
+                    from .cache import StageCache
+                    from .pipeline import Session
+                    cfg = self._gather_config_from_ui()
+                    self.session = Session(
+                        input_dir=str(self.current_input_path),
+                        work_dir=out_dir,
+                        config=cfg,
+                        spec=self.input_spec,
+                        cache=StageCache(out_dir),
+                        fname_memmap="",
+                        bord_px=0,
+                        cn_filter=cn_arr,
+                        pnr=pnr_arr,
+                        dims=cn_arr.shape,
+                        n_frames=0,
+                        prepare_hash="",
+                        motion_hash="",
+                        summary_hash="",
+                    )
+                else:
+                    self.session.cn_filter = cn_arr
+                    self.session.pnr = pnr_arr
+
+                self.set_status(f"Loaded existing Stage A summary images from {out_dir.name}!")
+                self._update_seed_preview()
+                return True
+            except Exception as e:
+                logger.warning("Could not auto-load existing Stage A files: %s", e)
+        return False
 
     # -------------------------------------------------------------------------
     # THEME & STYLING
@@ -412,9 +470,24 @@ class DecovoApp(tk.Tk):
         self.notebook.add(self.tab_seeds, text=" 2. Seed & Threshold Picker ")
         self.notebook.add(self.tab_curator, text=" 3. Neuron Curator ")
 
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
         self._build_step1_setup()
         self._build_step2_seeds()
         self._build_step3_curator()
+
+    def _on_tab_changed(self, _=None):
+        try:
+            selected = self.notebook.select()
+            if str(selected) == str(self.tab_seeds):
+                if self.session_cn is None:
+                    self._check_and_load_existing_stage_a()
+                self._update_seed_preview()
+            elif str(selected) == str(self.tab_curator):
+                if self.n_cells > 0:
+                    self._update_all_fast(rebuild_collections=False)
+        except Exception as e:
+            logger.debug("Tab switch error: %s", e)
 
     # -------------------------------------------------------------------------
     # TAB 1: SETUP & PREPROCESSING (STAGE A)
@@ -614,18 +687,22 @@ class DecovoApp(tk.Tk):
 
     def _update_seed_preview(self):
         self._seed_timer = None
-        if self.session is None or self.session.cn is None or self.session.pnr is None:
+        Cn = self.session_cn
+        PNR = self.session_pnr
+        if Cn is None or PNR is None:
+            self._draw_seed_plot()
             return
 
         corr = float(self.slider_corr.get())
-        pnr = float(self.slider_pnr.get())
-        Cn = self.session.cn
-        PNR = self.session.pnr
+        pnr_val = float(self.slider_pnr.get())
 
         # Fast local maxima detection in Cn & PNR space
-        mask = (Cn >= corr) & (PNR >= pnr)
-        gsig = float(self.spn_gsig.get())
-        footprint_rad = max(3, int(np.round(gsig)))
+        mask = (Cn >= corr) & (PNR >= pnr_val)
+        try:
+            gsig = float(self.spn_gsig.get())
+        except Exception:
+            gsig = 3.0
+        footprint_rad = max(2, int(np.round(gsig)))
         footprint = np.ones((footprint_rad * 2 + 1, footprint_rad * 2 + 1), dtype=bool)
 
         local_max = (PNR == ndimage.maximum_filter(PNR, footprint=footprint)) & mask
@@ -639,26 +716,49 @@ class DecovoApp(tk.Tk):
         self.ax_seeds.clear()
         self.ax_seeds.set_facecolor(self.PLOT_BG)
         self.fig_seeds.set_facecolor(self.PLOT_BG)
-        if self.session is None or self.session.cn is None:
-            self.ax_seeds.text(0.5, 0.5, "Run Stage A to generate Cn and PNR summary images",
-                               ha="center", va="center", color=self.FG_MUTED, transform=self.ax_seeds.transAxes)
+
+        Cn = self.session_cn
+        PNR = self.session_pnr
+
+        if Cn is None or PNR is None:
+            self.ax_seeds.text(
+                0.5,
+                0.5,
+                "Run Stage A to generate Cn and PNR summary images",
+                ha="center",
+                va="center",
+                color=self.FG_MUTED,
+                fontsize=11,
+                transform=self.ax_seeds.transAxes,
+            )
             self.ax_seeds.axis("off")
             self.canvas_seeds.draw_idle()
             return
 
-        img = self.session.cn if self.var_seed_view.get() == "Cn" else self.session.pnr
+        img = Cn if self.var_seed_view.get() == "Cn" else PNR
         cmap = "inferno" if self.var_seed_view.get() == "Cn" else "viridis"
 
         self.ax_seeds.imshow(img, cmap=cmap, aspect="equal", origin="upper")
         if len(self._seed_coords) > 0:
             # coords are (row, col) = (y, x)
-            self.ax_seeds.scatter(self._seed_coords[:, 1], self._seed_coords[:, 0],
-                                  s=18, c="#00ffff", marker="o", alpha=0.85, edgecolors="#ffffff", linewidths=0.5)
+            self.ax_seeds.scatter(
+                self._seed_coords[:, 1],
+                self._seed_coords[:, 0],
+                s=20,
+                c="#00ffff",
+                marker="o",
+                alpha=0.9,
+                edgecolors="#ffffff",
+                linewidths=0.6,
+            )
 
         title = f"{self.var_seed_view.get()} Summary Image with Candidate Seeds ({len(self._seed_coords)} seeds)"
         self.ax_seeds.set_title(title, color=self.FG_TEXT, fontsize=10, fontweight="bold")
         self.ax_seeds.axis("off")
-        self.fig_seeds.tight_layout()
+        try:
+            self.fig_seeds.tight_layout()
+        except Exception:
+            pass
         self.canvas_seeds.draw_idle()
 
     # -------------------------------------------------------------------------
@@ -829,9 +929,11 @@ class DecovoApp(tk.Tk):
 
             self.lbl_active_file.config(text=f"{spec.kind.upper()}: {path.name} ({spec.n_frames_raw or '?'} frames)")
             self.set_status(f"Ready: {spec.kind.upper()} ({spec.n_frames_raw or '?'} frames, {spec.dims_raw or '?'})")
+            self._check_and_load_existing_stage_a()
         except Exception as e:
             logger.warning("Could not auto-inspect input: %s", e)
             self.lbl_active_file.config(text=str(path.name))
+            self._check_and_load_existing_stage_a()
 
     # -------------------------------------------------------------------------
     # PIPELINE EXECUTION (STAGE A & STAGE B)
@@ -913,7 +1015,8 @@ class DecovoApp(tk.Tk):
         self.set_status(f"Extraction Complete! Extracted {res.n_neurons} neurons ({res.n_accepted} accepted).")
 
         # Load into Step 3 Curator
-        self._load_from_cnm(res.cnm, fov_background=res.session.cn)
+        fov_bg = self.session_cn
+        self._load_from_cnm(res.cnm, fov_background=fov_bg)
         self.notebook.select(self.tab_curator)
 
     def cancel_task(self):
@@ -1057,8 +1160,22 @@ class DecovoApp(tk.Tk):
 
     def _init_fov_plot(self):
         self.ax_fov.clear()
-        if self.fov_img is not None:
-            self.ax_fov.imshow(self.fov_img, cmap="gray", aspect="equal", origin="upper")
+        self.ax_fov.set_facecolor(self.PLOT_BG)
+        self.fig_fov.set_facecolor(self.PLOT_BG)
+
+        if self.fov_img is not None and self.n_cells > 0:
+            self.im_fov = self.ax_fov.imshow(self.fov_img, cmap="gray", aspect="equal", origin="upper")
+        else:
+            self.ax_fov.text(
+                0.5,
+                0.5,
+                "No neurons loaded yet.\nComplete Stage A & B or click 'Open HDF5...'",
+                ha="center",
+                va="center",
+                color=self.FG_MUTED,
+                fontsize=11,
+                transform=self.ax_fov.transAxes,
+            )
 
         self.lc_accepted = LineCollection([], colors="#00FF44", linewidths=0.9)
         self.lc_discarded = LineCollection([], colors="#FF2222", linewidths=0.6)
@@ -1072,7 +1189,10 @@ class DecovoApp(tk.Tk):
         self.highlight_centroid = self.ax_fov.scatter([], [], s=60, facecolors="none", edgecolors="#FFFF00", linewidths=2)
 
         self.ax_fov.set_axis_off()
-        self.fig_fov.tight_layout()
+        try:
+            self.fig_fov.tight_layout()
+        except Exception:
+            pass
         self.canvas_fov.draw_idle()
 
     def _init_detail_plot(self):
@@ -1081,23 +1201,58 @@ class DecovoApp(tk.Tk):
         self.ax_hist.clear()
         self.ax_trace.clear()
 
-        dummy = np.zeros((40, 40))
-        self.im_roi = self.ax_roi.imshow(dummy, cmap="viridis", origin="upper")
-        self.ax_roi.axis("off")
-        self.ax_metrics.axis("off")
+        self.ax_roi.set_facecolor(self.PLOT_BG)
+        self.ax_metrics.set_facecolor(self.PLOT_BG)
+        self.ax_hist.set_facecolor(self.AX_BG)
+        self.ax_trace.set_facecolor(self.AX_BG)
 
-        self.ax_hist.set_title("Population Activity Peaks", fontsize=9, fontweight="bold", color=self.FG_TEXT)
-        self.ax_hist.tick_params(colors=self.FG_MUTED, labelsize=8)
+        if self.n_cells == 0:
+            self.ax_roi.axis("off")
+            self.ax_metrics.axis("off")
+            self.ax_hist.set_axis_off()
+            self.ax_hist.text(
+                0.5,
+                0.5,
+                "Activity peaks will appear here",
+                ha="center",
+                va="center",
+                color=self.FG_MUTED,
+                fontsize=9,
+                transform=self.ax_hist.transAxes,
+            )
+            self.ax_trace.set_axis_off()
+            self.ax_trace.text(
+                0.5,
+                0.5,
+                "Neuron traces will appear here",
+                ha="center",
+                va="center",
+                color=self.FG_MUTED,
+                fontsize=9,
+                transform=self.ax_trace.transAxes,
+            )
+        else:
+            dummy = np.zeros((40, 40))
+            self.im_roi = self.ax_roi.imshow(dummy, cmap="viridis", origin="upper")
+            self.ax_roi.axis("off")
+            self.ax_metrics.axis("off")
 
-        self.line_raw, = self.ax_trace.plot([], [], color="#bbbbbb", linewidth=0.8, alpha=0.8, label="Raw (C+YrA)")
-        self.line_trace, = self.ax_trace.plot([], [], color="#0077cc", linewidth=1.4, label="Denoised C")
-        self.scatter_peaks = self.ax_trace.scatter([], [], color="#ef4444", s=18, marker="v", label="Peaks", zorder=5)
+            self.ax_hist.set_title("Population Activity Peaks", fontsize=9, fontweight="bold", color=self.FG_TEXT)
+            self.ax_hist.tick_params(colors=self.FG_MUTED, labelsize=8)
+            for sp_name in ("top", "bottom", "left", "right"):
+                self.ax_hist.spines[sp_name].set_color(self.FG_MUTED)
 
-        self.ax_trace.set_xlabel("Frames", fontsize=8, color=self.FG_MUTED)
-        self.ax_trace.set_ylabel("Intensity", fontsize=8, color=self.FG_MUTED)
-        self.ax_trace.tick_params(colors=self.FG_MUTED, labelsize=8)
-        self.ax_trace.grid(True, linestyle=":", alpha=0.3, color="#666666")
-        self.ax_trace.legend(fontsize=8, loc="upper right")
+            self.line_raw, = self.ax_trace.plot([], [], color=self.LINE_RAW_COLOR, linewidth=0.8, alpha=0.8, label="Raw (C+YrA)")
+            self.line_trace, = self.ax_trace.plot([], [], color=self.LINE_TRACE_COLOR, linewidth=1.4, label="Denoised C")
+            self.scatter_peaks = self.ax_trace.scatter([], [], color="#ef4444", s=18, marker="v", label="Peaks", zorder=5)
+
+            self.ax_trace.set_xlabel("Frames", fontsize=8, color=self.FG_MUTED)
+            self.ax_trace.set_ylabel("Intensity", fontsize=8, color=self.FG_MUTED)
+            self.ax_trace.tick_params(colors=self.FG_MUTED, labelsize=8)
+            self.ax_trace.grid(True, linestyle=":", alpha=0.3, color=self.GRID_COLOR)
+            for sp_name in ("top", "bottom", "left", "right"):
+                self.ax_trace.spines[sp_name].set_color(self.FG_MUTED)
+            self.ax_trace.legend(fontsize=8, loc="upper right")
 
         try:
             self.fig_detail.subplots_adjust(top=0.96, bottom=0.08, left=0.10, right=0.96, hspace=0.38, wspace=0.25)
