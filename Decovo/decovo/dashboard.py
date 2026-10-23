@@ -550,6 +550,7 @@ def create_corr_pnr_inspector(state: DashboardState, on_apply_thresholds: Callab
 
     corr_plot = pn.pane.Bokeh(sizing_mode="stretch_width", height=300)
     pnr_plot = pn.pane.Bokeh(sizing_mode="stretch_width", height=300)
+    pnr_hist_plot = pn.pane.Bokeh(sizing_mode="stretch_width", height=300)
     scatter_plot = pn.pane.Bokeh(sizing_mode="stretch_width", height=340)
 
     empty_state_html = """
@@ -587,7 +588,7 @@ def create_corr_pnr_inspector(state: DashboardState, on_apply_thresholds: Callab
         try:
             p1 = bk_figure(
                 title="Correlation Image (Cn)",
-                width=380,
+                width=340,
                 height=280,
                 tools="pan,wheel_zoom,box_zoom,reset",
                 match_aspect=True,
@@ -598,14 +599,90 @@ def create_corr_pnr_inspector(state: DashboardState, on_apply_thresholds: Callab
 
             p2 = bk_figure(
                 title="Peak-to-Noise Ratio (PNR)",
-                width=380,
+                width=340,
                 height=280,
                 tools="pan,wheel_zoom,box_zoom,reset",
                 match_aspect=True,
+                x_range=p1.x_range,
+                y_range=p1.y_range,
             )
             p2.image(image=[pn_img[::-1, :]], x=0, y=0, dw=pn_img.shape[1], dh=pn_img.shape[0], palette=Inferno256)
             p2.axis.visible = False
             pnr_plot.object = p2
+
+            # --- Histogram on the side of the PNR figure ---
+            valid_pnr = pn_img[np.isfinite(pn_img)]
+            if valid_pnr.size > 0:
+                max_obs = float(np.nanmax(valid_pnr))
+                if max_obs > pnr_slider.end:
+                    pnr_slider.end = float(np.ceil(max_obs + 2.0))
+
+                pnr_p99 = float(np.nanpercentile(valid_pnr, 99.9))
+                pnr_max = max(pnr_p99, mp * 1.3, 15.0)
+                n_bins = 60
+                counts, bin_edges = np.histogram(valid_pnr, bins=n_bins, range=(0.0, pnr_max))
+                left = bin_edges[:-1]
+                right = bin_edges[1:]
+                top_counts = np.maximum(counts, 0.8)
+
+                # Color: accepted seed bins highlighted, noise floor muted
+                bar_colors = ["#f59e0b" if r >= mp else "#475569" for r in right]
+                status_tags = [
+                    f"Candidate seed (≥ min_pnr {mp:.2f})" if r >= mp else f"Noise floor (< min_pnr {mp:.2f})"
+                    for r in right
+                ]
+
+                hist_src = ColumnDataSource(
+                    data={
+                        "left": left,
+                        "right": right,
+                        "top": top_counts,
+                        "bottom": np.full_like(top_counts, 0.8),
+                        "count": counts,
+                        "color": bar_colors,
+                        "status": status_tags,
+                    }
+                )
+
+                p_hist = bk_figure(
+                    title=f"PNR Distribution (thr ≥ {mp:.2f})",
+                    width=320,
+                    height=280,
+                    tools="pan,wheel_zoom,box_zoom,reset",
+                    x_axis_label="PNR",
+                    y_axis_label="Pixel Count (log)",
+                    y_axis_type="log",
+                )
+                p_hist.quad(
+                    top="top",
+                    bottom="bottom",
+                    left="left",
+                    right="right",
+                    source=hist_src,
+                    fill_color="color",
+                    line_color="#0f172a",
+                    line_width=0.5,
+                    fill_alpha=0.85,
+                )
+
+                thr_span = Span(
+                    location=mp,
+                    dimension="height",
+                    line_color=ACCENT_COLOR,
+                    line_width=2.5,
+                    line_dash="dashed",
+                )
+                p_hist.add_layout(thr_span)
+
+                hover_hist = HoverTool(
+                    tooltips=[
+                        ("PNR Bin", "@left{0.00} – @right{0.00}"),
+                        ("Pixels", "@count{0,0}"),
+                        ("Status", "@status"),
+                    ]
+                )
+                p_hist.add_tools(hover_hist)
+                pnr_hist_plot.object = p_hist
 
             flat_cn = cn.ravel()
             flat_pnr = pn_img.ravel()
@@ -634,7 +711,10 @@ def create_corr_pnr_inspector(state: DashboardState, on_apply_thresholds: Callab
                 p3.scatter("corr", "pnr", source=src_above, size=3, alpha=0.6, color=SUCCESS_COLOR)
 
             scatter_plot.object = p3
-            plot_container.objects = [pn.Row(corr_plot, pnr_plot), scatter_plot]
+            plot_container.objects = [
+                pn.Row(corr_plot, pnr_plot, pnr_hist_plot, sizing_mode="stretch_width"),
+                scatter_plot,
+            ]
         except Exception as e:
             logger.warning("Inspector plot update failed: %s", e)
 
@@ -760,6 +840,7 @@ def create_neuron_browser(state: DashboardState):
                 tools="pan,wheel_zoom,box_zoom,reset",
                 x_axis_label="Time (s)",
                 y_axis_label="Spikes",
+                x_range=p2.x_range,
             )
             p3.line(t, deconv, line_width=0.9, color=SUCCESS_COLOR)
             deconv_plot.object = p3

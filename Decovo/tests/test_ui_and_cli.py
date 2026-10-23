@@ -81,3 +81,32 @@ def test_dashboard_creation_succeeds():
         pytest.skip("Panel not installed")
     tmpl = create_dashboard()
     assert tmpl is not None
+
+
+def test_corr_pnr_inspector_with_histogram():
+    from decovo.dashboard import _BOKEH_OK, _PANEL_OK, DashboardState, create_corr_pnr_inspector
+
+    if not _PANEL_OK or not _BOKEH_OK:
+        pytest.skip("Panel or Bokeh not installed")
+
+    state = DashboardState()
+    state.cn_filter = np.random.uniform(0.1, 0.9, (40, 40)).astype(np.float32)
+    state.pnr = np.random.uniform(1.0, 15.0, (40, 40)).astype(np.float32)
+
+    applied_thresholds = []
+
+    def on_apply(c, p):
+        applied_thresholds.append((c, p))
+
+    panel, update_plots, corr_slider, pnr_slider = create_corr_pnr_inspector(state, on_apply)
+    assert panel is not None
+
+    # Call update_plots to trigger bokeh figure generation including PNR histogram
+    update_plots()
+
+    # The layout container should have the top row with (Cn, PNR, PNR Histogram)
+    plot_container = panel[2]
+    top_row = plot_container.objects[0]
+    assert len(top_row.objects) == 3  # corr_plot, pnr_plot, pnr_hist_plot
+    assert top_row.objects[2].object is not None  # pnr_hist Bokeh figure
+

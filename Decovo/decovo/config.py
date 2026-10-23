@@ -645,3 +645,13 @@ def load_config(path: Optional[str | Path] = None, **overrides: Any) -> Pipeline
     if overrides:
         _apply_overrides(cfg, overrides)
     return cfg
+
+
+def save_config(cfg: PipelineConfig, path: str | Path) -> Path:
+    """Save `PipelineConfig` to a YAML file."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg.to_dict(), f, sort_keys=False)
+    return p
+

@@ -56,6 +56,43 @@ def save_hdf5_for_curator(
     return out_path
 
 
+def save_mat_for_curator(
+    cnm,
+    out_path: str | Path,
+    fps: float = 20.0,
+    dims: Optional[Tuple[int, int]] = None,
+) -> Path:
+    """Save `ms.mat` compatible with CleanMiniscope and LoadMatFinal.py.
+
+    Both `RawTraces` and `DeconvTraces` are oriented as `time x neurons` (`T x N`).
+    """
+    from scipy.io import savemat
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    est = cnm.estimates
+
+    raw_traces = np.asarray(est.C) if getattr(est, "C", None) is not None and len(est.C) > 0 else np.zeros((0, 0), dtype=np.float32)
+    deconv_traces = np.asarray(est.S) if getattr(est, "S", None) is not None and len(est.S) > 0 else np.zeros_like(raw_traces)
+
+    d1, d2 = dims if dims is not None else (tuple(est.dims) if hasattr(est, "dims") and est.dims is not None else (240, 376))
+
+    ms_dict = {
+        "framesNum": int(raw_traces.shape[1]) if raw_traces.ndim == 2 else 0,
+        "height": int(d1),
+        "width": int(d2),
+        "frameRate": float(fps),
+        "CorrProj": est.Cn if hasattr(est, "Cn") and est.Cn is not None else np.zeros((d1, d2), dtype=np.float32),
+        "PeakToNoiseProj": est.PNR if hasattr(est, "PNR") and est.PNR is not None else np.zeros((d1, d2), dtype=np.float32),
+        "RawTraces": raw_traces.T,        # time x neurons (T x N)
+        "DeconvTraces": deconv_traces.T,  # time x neurons (T x N)
+        "numNeurons": int(raw_traces.shape[0]) if raw_traces.ndim == 2 else 0,
+    }
+    savemat(str(out_path), {"ms": ms_dict})
+    logger.info("Saved Curator-compatible MAT: %s", out_path)
+    return out_path
+
+
 def _save_summary_figure(
     cnm,
     cn_filter: np.ndarray,

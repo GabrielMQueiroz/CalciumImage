@@ -17,8 +17,9 @@ from .pipeline import (
     run_pipeline,
 )
 from .stages import ClusterManager, ProgressReporter
+from .gui import DecovoApp, main as launch_gui
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 __all__ = [
     "PipelineConfig",
@@ -46,4 +47,6 @@ __all__ = [
     "auto_n_processes",
     "configure_caiman_tempdir",
     "detect_cuda",
+    "DecovoApp",
+    "launch_gui",
 ]
