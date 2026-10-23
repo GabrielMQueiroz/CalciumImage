@@ -117,6 +117,21 @@ class QueueHandler(logging.Handler):
             pass
 
 
+class TextEntryCompat(ttk.Entry):
+    """Entry widget that also supports .config(text=...) for backward compatibility."""
+
+    def config(self, cnf=None, **kw):
+        if kw and "text" in kw:
+            txt = kw.pop("text")
+            try:
+                self.delete(0, tk.END)
+                self.insert(0, str(txt))
+            except Exception:
+                pass
+        if cnf or kw:
+            return super().config(cnf, **kw)
+
+
 class DecovoApp(tk.Tk):
     """Native Tkinter desktop application for Decovo CNMF-E Deconvolution & Curation."""
 
@@ -242,12 +257,49 @@ class DecovoApp(tk.Tk):
                     self.session.cn_filter = cn_arr
                     self.session.pnr = pnr_arr
 
+                self._calibrate_seed_sliders_from_data(force_reset_thresholds=False)
                 self.set_status(f"Loaded existing Stage A summary images from {out_dir.name}!")
                 self._update_seed_preview()
                 return True
             except Exception as e:
                 logger.warning("Could not auto-load existing Stage A files: %s", e)
         return False
+
+    def _calibrate_seed_sliders_from_data(self, force_reset_thresholds: bool = False):
+        """Dynamically calibrate slider bounds from actual data without hardcoded limits."""
+        Cn = self.session_cn
+        PNR = self.session_pnr
+        if Cn is None or PNR is None:
+            return
+
+        valid_cn = Cn[np.isfinite(Cn)]
+        valid_pnr = PNR[np.isfinite(PNR)]
+        if valid_cn.size == 0 or valid_pnr.size == 0:
+            return
+
+        cn_min = float(np.nanmin(valid_cn))
+        cn_max = float(np.nanmax(valid_cn))
+        pnr_min = float(np.nanmin(valid_pnr))
+        pnr_max = float(np.nanmax(valid_pnr))
+
+        if cn_max <= cn_min:
+            cn_max = cn_min + 1.0
+        if pnr_max <= pnr_min:
+            pnr_max = pnr_min + 10.0
+
+        if hasattr(self, "slider_corr"):
+            cur_c = float(self.slider_corr.get())
+            self.slider_corr.configure(from_=min(cn_min, cur_c), to=max(cn_max, cur_c))
+        if hasattr(self, "slider_pnr"):
+            cur_p = float(self.slider_pnr.get())
+            self.slider_pnr.configure(from_=min(max(0.0, pnr_min), cur_p), to=max(pnr_max, cur_p))
+
+        if force_reset_thresholds:
+            from .params_auto import estimate_params_heuristic
+            h_corr, h_pnr = estimate_params_heuristic(Cn, PNR)
+            self._set_corr_threshold(h_corr)
+            self._set_pnr_threshold(h_pnr)
+            self._sliders_calibrated = True
 
     # -------------------------------------------------------------------------
     # THEME & STYLING
@@ -635,16 +687,24 @@ class DecovoApp(tk.Tk):
 
         # Controls Bar
         ttk.Label(top_bar, text="Min Correlation (min_corr):", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(4, 2))
-        self.slider_corr = ttk.Scale(top_bar, from_=0.60, to=0.98, value=0.85, command=self._on_seed_slider_moved)
+        self.slider_corr = ttk.Scale(top_bar, from_=0.0, to=1.0, value=0.85, command=self._on_seed_slider_moved)
         self.slider_corr.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
-        self.lbl_corr_val = ttk.Label(top_bar, text="0.85", width=5, font=("Consolas", 9, "bold"))
-        self.lbl_corr_val.pack(side=tk.LEFT, padx=2)
+        self.ent_corr = TextEntryCompat(top_bar, width=6, font=("Consolas", 9, "bold"))
+        self.ent_corr.insert(0, "0.85")
+        self.ent_corr.pack(side=tk.LEFT, padx=2)
+        self.ent_corr.bind("<Return>", lambda e: self._on_corr_entry_submit())
+        self.ent_corr.bind("<FocusOut>", lambda e: self._on_corr_entry_submit())
+        self.lbl_corr_val = self.ent_corr
 
         ttk.Label(top_bar, text="Min PNR (min_pnr):", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 2))
-        self.slider_pnr = ttk.Scale(top_bar, from_=4.0, to=25.0, value=10.0, command=self._on_seed_slider_moved)
+        self.slider_pnr = ttk.Scale(top_bar, from_=0.0, to=50.0, value=10.0, command=self._on_seed_slider_moved)
         self.slider_pnr.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
-        self.lbl_pnr_val = ttk.Label(top_bar, text="10.0", width=5, font=("Consolas", 9, "bold"))
-        self.lbl_pnr_val.pack(side=tk.LEFT, padx=2)
+        self.ent_pnr = TextEntryCompat(top_bar, width=6, font=("Consolas", 9, "bold"))
+        self.ent_pnr.insert(0, "10.0")
+        self.ent_pnr.pack(side=tk.LEFT, padx=2)
+        self.ent_pnr.bind("<Return>", lambda e: self._on_pnr_entry_submit())
+        self.ent_pnr.bind("<FocusOut>", lambda e: self._on_pnr_entry_submit())
+        self.lbl_pnr_val = self.ent_pnr
 
         self.lbl_seed_count = ttk.Label(top_bar, text="Seeds: 0", style="Badge.TLabel")
         self.lbl_seed_count.pack(side=tk.LEFT, padx=8)
@@ -684,37 +744,83 @@ class DecovoApp(tk.Tk):
         self.canvas_seeds.mpl_connect("button_press_event", self._on_seed_canvas_click)
         self.canvas_seeds.mpl_connect("motion_notify_event", self._on_seed_canvas_motion)
 
+    def _set_corr_threshold(self, val: float):
+        cur_from = float(self.slider_corr.cget("from"))
+        cur_to = float(self.slider_corr.cget("to"))
+        if val < cur_from:
+            self.slider_corr.configure(from_=val)
+        if val > cur_to:
+            self.slider_corr.configure(to=val)
+        self.slider_corr.set(val)
+        self._on_seed_slider_moved()
+
+    def _set_pnr_threshold(self, val: float):
+        cur_from = float(self.slider_pnr.cget("from"))
+        cur_to = float(self.slider_pnr.cget("to"))
+        if val < cur_from:
+            self.slider_pnr.configure(from_=val)
+        if val > cur_to:
+            self.slider_pnr.configure(to=val)
+        self.slider_pnr.set(val)
+        self._on_seed_slider_moved()
+
+    def _on_corr_entry_submit(self):
+        try:
+            val = float(self.ent_corr.get())
+            self._set_corr_threshold(val)
+        except ValueError:
+            pass
+
+    def _on_pnr_entry_submit(self):
+        try:
+            val = float(self.ent_pnr.get())
+            self._set_pnr_threshold(val)
+        except ValueError:
+            pass
+
     def _on_seed_canvas_click(self, event):
         """Click on correlation or PNR histogram to interactively set threshold."""
         if event.xdata is None or event.ydata is None:
             return
         if event.inaxes == self.ax_corr_hist:
-            new_corr = float(np.clip(event.xdata, 0.50, 0.98))
-            self.slider_corr.set(new_corr)
-            self._on_seed_slider_moved()
+            x_min, x_max = self.ax_corr_hist.get_xlim()
+            new_corr = float(np.clip(event.xdata, min(x_min, x_max), max(x_min, x_max)))
+            self._set_corr_threshold(new_corr)
         elif event.inaxes == self.ax_pnr_hist:
-            new_pnr = float(np.clip(event.xdata, 3.0, 30.0))
-            self.slider_pnr.set(new_pnr)
-            self._on_seed_slider_moved()
+            x_min, x_max = self.ax_pnr_hist.get_xlim()
+            new_pnr = float(np.clip(event.xdata, min(x_min, x_max), max(x_min, x_max)))
+            self._set_pnr_threshold(new_pnr)
 
     def _on_seed_canvas_motion(self, event):
         """Drag across correlation or PNR histogram to dynamically adjust threshold."""
         if event.button != 1 or event.xdata is None:
             return
         if event.inaxes == self.ax_corr_hist:
-            new_corr = float(np.clip(event.xdata, 0.50, 0.98))
-            self.slider_corr.set(new_corr)
-            self._on_seed_slider_moved()
+            x_min, x_max = self.ax_corr_hist.get_xlim()
+            new_corr = float(np.clip(event.xdata, min(x_min, x_max), max(x_min, x_max)))
+            self._set_corr_threshold(new_corr)
         elif event.inaxes == self.ax_pnr_hist:
-            new_pnr = float(np.clip(event.xdata, 3.0, 30.0))
-            self.slider_pnr.set(new_pnr)
-            self._on_seed_slider_moved()
+            x_min, x_max = self.ax_pnr_hist.get_xlim()
+            new_pnr = float(np.clip(event.xdata, min(x_min, x_max), max(x_min, x_max)))
+            self._set_pnr_threshold(new_pnr)
 
     def _on_seed_slider_moved(self, _=None):
         corr = float(self.slider_corr.get())
         pnr = float(self.slider_pnr.get())
-        self.lbl_corr_val.config(text=f"{corr:.2f}")
-        self.lbl_pnr_val.config(text=f"{pnr:.1f}")
+        if hasattr(self, "ent_corr"):
+            try:
+                if self.focus_get() != self.ent_corr:
+                    self.ent_corr.delete(0, tk.END)
+                    self.ent_corr.insert(0, f"{corr:.3f}".rstrip("0").rstrip(".") if corr != 0 else "0")
+            except Exception:
+                pass
+        if hasattr(self, "ent_pnr"):
+            try:
+                if self.focus_get() != self.ent_pnr:
+                    self.ent_pnr.delete(0, tk.END)
+                    self.ent_pnr.insert(0, f"{pnr:.2f}".rstrip("0").rstrip(".") if pnr != 0 else "0")
+            except Exception:
+                pass
 
         # Debounce seed recomputation to 40ms
         if self._seed_timer is not None:
@@ -729,6 +835,7 @@ class DecovoApp(tk.Tk):
             self._draw_seed_plot()
             return
 
+        self._calibrate_seed_sliders_from_data(force_reset_thresholds=False)
         corr = float(self.slider_corr.get())
         pnr_val = float(self.slider_pnr.get())
 
@@ -821,14 +928,30 @@ class DecovoApp(tk.Tk):
         # 2. Correlation Histogram (Interactive Visual Picker)
         valid_cn = Cn[np.isfinite(Cn)]
         if valid_cn.size > 0:
-            counts, bin_edges = np.histogram(valid_cn, bins=45, range=(0.0, 1.0))
+            cn_min = float(np.nanmin(valid_cn))
+            cn_max = float(np.nanmax(valid_cn))
+            if cn_max <= cn_min:
+                cn_max = cn_min + 1.0
+
+            # Dynamic bounds matching data & user selection without hardcoded limits
+            h_cn_min = min(cn_min, corr)
+            h_cn_max = max(cn_max, corr)
+            pad_cn = max((h_cn_max - h_cn_min) * 0.02, 1e-4)
+
+            # Ensure slider spans the full range
+            cur_c_from = float(self.slider_corr.cget("from"))
+            cur_c_to = float(self.slider_corr.cget("to"))
+            if h_cn_min < cur_c_from or h_cn_max > cur_c_to:
+                self.slider_corr.configure(from_=min(cur_c_from, h_cn_min), to=max(cur_c_to, h_cn_max))
+
+            counts, bin_edges = np.histogram(valid_cn, bins=50, range=(h_cn_min, h_cn_max))
             bar_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
             bar_colors = ["#3b82f6" if b >= corr else ("#475569" if self.is_dark_mode else "#cbd5e1") for b in bar_centers]
             self.ax_corr_hist.bar(bar_centers, np.maximum(counts, 0.5), width=bin_edges[1] - bin_edges[0], color=bar_colors, edgecolor=self.AX_BG, linewidth=0.5)
-            self.ax_corr_hist.axvline(corr, color="#ef4444", linestyle="--", linewidth=2.0, label=f"min_corr: {corr:.2f}")
+            self.ax_corr_hist.axvline(corr, color="#ef4444", linestyle="--", linewidth=2.0, label=f"min_corr: {corr:.3f}")
             self.ax_corr_hist.set_yscale("log")
-            self.ax_corr_hist.set_xlim(0.0, 1.0)
-            self.ax_corr_hist.set_title(f"Correlation Distribution (Click to set min_corr ≥ {corr:.2f})", fontsize=8, fontweight="bold", color=self.FG_TEXT)
+            self.ax_corr_hist.set_xlim(h_cn_min - pad_cn, h_cn_max + pad_cn)
+            self.ax_corr_hist.set_title(f"Correlation Distribution (Click to set min_corr ≥ {corr:.3f})", fontsize=8, fontweight="bold", color=self.FG_TEXT)
             self.ax_corr_hist.set_xlabel("Correlation (Cn)", fontsize=7, color=self.FG_MUTED)
             self.ax_corr_hist.set_ylabel("Pixels (log)", fontsize=7, color=self.FG_MUTED)
             self.ax_corr_hist.grid(True, linestyle=":", alpha=0.25, color=self.GRID_COLOR)
@@ -837,15 +960,29 @@ class DecovoApp(tk.Tk):
         # 3. PNR Histogram (Interactive Visual Picker)
         valid_pnr = PNR[np.isfinite(PNR)]
         if valid_pnr.size > 0:
-            max_p = max(float(np.nanpercentile(valid_pnr, 99.8)), pnr_val * 1.3, 20.0)
-            counts_p, bin_edges_p = np.histogram(valid_pnr, bins=45, range=(0.0, max_p))
+            pnr_min = float(np.nanmin(valid_pnr))
+            pnr_max = float(np.nanmax(valid_pnr))
+            if pnr_max <= pnr_min:
+                pnr_max = pnr_min + 10.0
+
+            h_pnr_min = min(max(0.0, pnr_min), pnr_val)
+            h_pnr_max = max(pnr_max, pnr_val * 1.05)
+            pad_pnr = max((h_pnr_max - h_pnr_min) * 0.02, 0.1)
+
+            # Ensure slider spans the full range
+            cur_p_from = float(self.slider_pnr.cget("from"))
+            cur_p_to = float(self.slider_pnr.cget("to"))
+            if h_pnr_min < cur_p_from or h_pnr_max > cur_p_to:
+                self.slider_pnr.configure(from_=min(cur_p_from, h_pnr_min), to=max(cur_p_to, h_pnr_max))
+
+            counts_p, bin_edges_p = np.histogram(valid_pnr, bins=50, range=(h_pnr_min, h_pnr_max))
             bar_centers_p = (bin_edges_p[:-1] + bin_edges_p[1:]) / 2
             bar_colors_p = ["#f59e0b" if b >= pnr_val else ("#475569" if self.is_dark_mode else "#cbd5e1") for b in bar_centers_p]
             self.ax_pnr_hist.bar(bar_centers_p, np.maximum(counts_p, 0.5), width=bin_edges_p[1] - bin_edges_p[0], color=bar_colors_p, edgecolor=self.AX_BG, linewidth=0.5)
-            self.ax_pnr_hist.axvline(pnr_val, color="#ef4444", linestyle="--", linewidth=2.0, label=f"min_pnr: {pnr_val:.1f}")
+            self.ax_pnr_hist.axvline(pnr_val, color="#ef4444", linestyle="--", linewidth=2.0, label=f"min_pnr: {pnr_val:.2f}")
             self.ax_pnr_hist.set_yscale("log")
-            self.ax_pnr_hist.set_xlim(0.0, max_p)
-            self.ax_pnr_hist.set_title(f"PNR Distribution (Click to set min_pnr ≥ {pnr_val:.1f})", fontsize=8, fontweight="bold", color=self.FG_TEXT)
+            self.ax_pnr_hist.set_xlim(h_pnr_min - pad_pnr, h_pnr_max + pad_pnr)
+            self.ax_pnr_hist.set_title(f"PNR Distribution (Click to set min_pnr ≥ {pnr_val:.2f})", fontsize=8, fontweight="bold", color=self.FG_TEXT)
             self.ax_pnr_hist.set_xlabel("Peak-to-Noise Ratio (PNR)", fontsize=7, color=self.FG_MUTED)
             self.ax_pnr_hist.set_ylabel("Pixels (log)", fontsize=7, color=self.FG_MUTED)
             self.ax_pnr_hist.grid(True, linestyle=":", alpha=0.25, color=self.GRID_COLOR)
@@ -1068,6 +1205,7 @@ class DecovoApp(tk.Tk):
         self.btn_stop.config(state=tk.DISABLED)
         self.set_status("Stage A Complete! Cn and PNR summary images generated.")
 
+        self._calibrate_seed_sliders_from_data(force_reset_thresholds=True)
         # Switch to Tab 2 (Seeds) & update preview
         self.notebook.select(self.tab_seeds)
         self._update_seed_preview()

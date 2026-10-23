@@ -25,11 +25,15 @@ def estimate_params_heuristic(
     """Fast heuristic estimate of `min_corr` and `min_pnr` from summary image distributions."""
     corr_mean = float(np.nanmean(cn_filter))
     corr_std = float(np.nanstd(cn_filter))
-    min_corr = float(np.clip(corr_mean + 0.5 * corr_std, 0.4, 0.95))
+    cn_min = float(np.nanmin(cn_filter))
+    cn_max = float(np.nanmax(cn_filter))
+    min_corr = float(np.clip(corr_mean + 0.5 * corr_std, cn_min, cn_max))
 
     pnr_mean = float(np.nanmean(pnr))
     pnr_std = float(np.nanstd(pnr))
-    min_pnr = float(np.clip(pnr_mean + 1.0 * pnr_std, 3.0, 20.0))
+    pnr_min = float(np.nanmin(pnr))
+    pnr_max = float(np.nanmax(pnr))
+    min_pnr = float(np.clip(pnr_mean + 1.0 * pnr_std, max(0.0, pnr_min), pnr_max))
 
     corr_p90 = float(np.nanpercentile(cn_filter, 90))
     pnr_p90 = float(np.nanpercentile(pnr, 90))
@@ -67,14 +71,19 @@ def run_grid_search(
 
     init_corr, init_pnr = estimate_params_heuristic(cn_filter, pnr)
 
+    cn_min = float(np.nanmin(cn_filter))
+    cn_max = float(np.nanmax(cn_filter))
+    pnr_min = float(np.nanmin(pnr))
+    pnr_max = float(np.nanmax(pnr))
+
     corr_range = np.linspace(
-        max(0.3, init_corr - 0.15),
-        min(0.98, init_corr + 0.15),
+        max(cn_min, init_corr - 0.15),
+        min(cn_max, init_corr + 0.15),
         config.grid_corr_steps,
     )
     pnr_range = np.linspace(
-        max(2.0, init_pnr - 3.0),
-        min(25.0, init_pnr + 3.0),
+        max(max(0.0, pnr_min), init_pnr - 3.0),
+        min(pnr_max, init_pnr + 3.0),
         config.grid_pnr_steps,
     )
 

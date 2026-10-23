@@ -2,8 +2,18 @@
 """Unit tests for Decovo native Tkinter desktop GUI (decovo/gui.py)."""
 
 import os
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+# Ensure Windows Anaconda Tcl/Tk path is found reliably across repeated Tk instances
+conda_prefix = sys.prefix
+tcl_dir = os.path.join(conda_prefix, "Library", "lib", "tcl8.6")
+tk_dir = os.path.join(conda_prefix, "Library", "lib", "tk8.6")
+if os.path.exists(tcl_dir) and "TCL_LIBRARY" not in os.environ:
+    os.environ["TCL_LIBRARY"] = tcl_dir
+if os.path.exists(tk_dir) and "TK_LIBRARY" not in os.environ:
+    os.environ["TK_LIBRARY"] = tk_dir
 
 import matplotlib
 matplotlib.use("Agg")
@@ -149,6 +159,19 @@ def test_gui_seed_preview():
         event_pnr = SimpleNamespace(xdata=15.0, ydata=5, inaxes=app.ax_pnr_hist, button=1)
         app._on_seed_canvas_click(event_pnr)
         assert abs(float(app.slider_pnr.get()) - 15.0) < 1e-3
+
+        # Test non-hardcoded threshold entry submit (arbitrary unconstrained values)
+        app.ent_corr.delete(0, tk.END)
+        app.ent_corr.insert(0, "0.35")
+        app._on_corr_entry_submit()
+        assert abs(float(app.slider_corr.get()) - 0.35) < 1e-3
+        assert float(app.slider_corr.cget("from")) <= 0.35
+
+        app.ent_pnr.delete(0, tk.END)
+        app.ent_pnr.insert(0, "48.5")
+        app._on_pnr_entry_submit()
+        assert abs(float(app.slider_pnr.get()) - 48.5) < 1e-3
+        assert float(app.slider_pnr.cget("to")) >= 48.5
     finally:
         app.destroy()
 
