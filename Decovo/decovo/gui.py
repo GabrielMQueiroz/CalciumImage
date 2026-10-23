@@ -201,11 +201,47 @@ class DecovoApp(tk.Tk):
         except Exception:
             pass
 
-        self.BG_MAIN = "#1e1e1e"
-        self.BG_CARD = "#252526"
-        self.BG_ELEVATED = "#2d2d2d"
-        self.FG_TEXT = "#e0e0e0"
-        self.FG_MUTED = "#8e8e8e"
+        self.is_dark_mode = True
+        self.apply_theme()
+
+    def apply_theme(self):
+        if self.is_dark_mode:
+            # Dark / Night Theme
+            self.BG_MAIN = "#1e1e1e"
+            self.BG_CARD = "#252526"
+            self.BG_ELEVATED = "#2d2d2d"
+            self.FG_TEXT = "#e0e0e0"
+            self.FG_MUTED = "#8e8e8e"
+            self.FG_HEADER = "#ffffff"
+            self.BADGE_FG = "#60a5fa"
+            self.ENTRY_BG = "#2d2d2d"
+            self.LOG_BG = "#181818"
+            self.LOG_FG = "#cccccc"
+            self.PLOT_BG = "#1e1e1e"
+            self.AX_BG = "#252526"
+            self.LINE_RAW_COLOR = "#bbbbbb"
+            self.LINE_TRACE_COLOR = "#0077cc"
+            self.GRID_COLOR = "#666666"
+            self.DISABLED_BG = "#333333"
+        else:
+            # Light / Day Theme
+            self.BG_MAIN = "#f1f5f9"
+            self.BG_CARD = "#ffffff"
+            self.BG_ELEVATED = "#e2e8f0"
+            self.FG_TEXT = "#0f172a"
+            self.FG_MUTED = "#64748b"
+            self.FG_HEADER = "#0f172a"
+            self.BADGE_FG = "#2563eb"
+            self.ENTRY_BG = "#ffffff"
+            self.LOG_BG = "#ffffff"
+            self.LOG_FG = "#1e293b"
+            self.PLOT_BG = "#f8fafc"
+            self.AX_BG = "#ffffff"
+            self.LINE_RAW_COLOR = "#64748b"
+            self.LINE_TRACE_COLOR = "#0284c7"
+            self.GRID_COLOR = "#cbd5e1"
+            self.DISABLED_BG = "#e2e8f0"
+
         self.ACCENT_BLUE = "#3b82f6"
         self.ACCENT_GREEN = "#10b981"
         self.ACCENT_RED = "#ef4444"
@@ -218,30 +254,86 @@ class DecovoApp(tk.Tk):
         self.style.configure("Card.TFrame", background=self.BG_CARD)
         self.style.configure("TLabel", background=self.BG_MAIN, foreground=self.FG_TEXT)
         self.style.configure("Card.TLabel", background=self.BG_CARD, foreground=self.FG_TEXT)
-        self.style.configure("Header.TLabel", background=self.BG_MAIN, foreground="#ffffff", font=("Segoe UI", 11, "bold"))
-        self.style.configure("Badge.TLabel", background=self.BG_ELEVATED, foreground="#60a5fa", font=("Segoe UI", 8, "bold"), padding=3)
+        self.style.configure("Header.TLabel", background=self.BG_MAIN, foreground=self.FG_HEADER, font=("Segoe UI", 11, "bold"))
+        self.style.configure("Badge.TLabel", background=self.BG_ELEVATED, foreground=self.BADGE_FG, font=("Segoe UI", 8, "bold"), padding=3)
 
-        self.style.configure("TLabelframe", background=self.BG_MAIN, foreground="#ffffff")
-        self.style.configure("TLabelframe.Label", background=self.BG_MAIN, foreground="#ffffff", font=("Segoe UI", 9, "bold"))
+        self.style.configure("TLabelframe", background=self.BG_MAIN, foreground=self.FG_HEADER)
+        self.style.configure("TLabelframe.Label", background=self.BG_MAIN, foreground=self.FG_HEADER, font=("Segoe UI", 9, "bold"))
 
-        self.style.configure("TButton", background=self.BG_ELEVATED, foreground="#ffffff", borderwidth=1, padding=5)
-        self.style.map("TButton", background=[("active", self.ACCENT_BLUE), ("disabled", "#333333")])
+        self.style.configure("TButton", background=self.BG_ELEVATED, foreground=self.FG_TEXT, borderwidth=1, padding=5)
+        self.style.map("TButton", background=[("active", self.ACCENT_BLUE), ("disabled", self.DISABLED_BG)], foreground=[("active", "#ffffff")])
 
         self.style.configure("Accent.TButton", background=self.ACCENT_BLUE, foreground="#ffffff", font=("Segoe UI", 9, "bold"))
-        self.style.map("Accent.TButton", background=[("active", "#2563eb"), ("disabled", "#333333")])
+        self.style.map("Accent.TButton", background=[("active", "#2563eb"), ("disabled", self.DISABLED_BG)])
 
         self.style.configure("Success.TButton", background=self.ACCENT_GREEN, foreground="#ffffff", font=("Segoe UI", 9, "bold"))
-        self.style.map("Success.TButton", background=[("active", "#059669"), ("disabled", "#333333")])
+        self.style.map("Success.TButton", background=[("active", "#059669"), ("disabled", self.DISABLED_BG)])
 
         self.style.configure("Danger.TButton", background=self.ACCENT_RED, foreground="#ffffff", font=("Segoe UI", 9, "bold"))
-        self.style.map("Danger.TButton", background=[("active", "#dc2626"), ("disabled", "#333333")])
+        self.style.map("Danger.TButton", background=[("active", "#dc2626"), ("disabled", self.DISABLED_BG)])
+
+        self.style.configure("Theme.TButton", background=self.BG_ELEVATED, foreground=self.FG_TEXT, font=("Segoe UI", 9, "bold"))
+        self.style.map("Theme.TButton", background=[("active", self.ACCENT_BLUE)], foreground=[("active", "#ffffff")])
 
         self.style.configure("TNotebook", background=self.BG_MAIN, borderwidth=0)
         self.style.configure("TNotebook.Tab", background=self.BG_CARD, foreground=self.FG_TEXT, padding=[16, 7], font=("Segoe UI", 9, "bold"))
-        self.style.map("TNotebook.Tab", background=[("selected", self.BG_ELEVATED)], foreground=[("selected", "#60a5fa")])
+        self.style.map("TNotebook.Tab", background=[("selected", self.BG_ELEVATED)], foreground=[("selected", self.BADGE_FG)])
 
-        self.style.configure("TEntry", fieldbackground=self.BG_ELEVATED, foreground="#ffffff")
-        self.style.configure("TSpinbox", fieldbackground=self.BG_ELEVATED, foreground="#ffffff")
+        self.style.configure("TEntry", fieldbackground=self.ENTRY_BG, foreground=self.FG_TEXT)
+        self.style.configure("TSpinbox", fieldbackground=self.ENTRY_BG, foreground=self.FG_TEXT)
+
+        if hasattr(self, "txt_log"):
+            self.txt_log.configure(bg=self.LOG_BG, fg=self.LOG_FG, insertbackground=self.FG_TEXT)
+
+        self._apply_theme_to_plots()
+
+    def toggle_theme(self):
+        """Toggle between Day (Light) and Night (Dark) visual themes."""
+        self.is_dark_mode = not self.is_dark_mode
+        self.apply_theme()
+        if hasattr(self, "btn_theme_toggle"):
+            theme_text = "☀️ Day Mode" if self.is_dark_mode else "🌙 Night Mode"
+            self.btn_theme_toggle.config(text=theme_text)
+
+        if self.n_cells > 0:
+            self._update_all_fast(rebuild_collections=True)
+        else:
+            self._draw_seed_plot()
+
+    def _apply_theme_to_plots(self):
+        if not hasattr(self, "fig_seeds"):
+            return
+
+        for fig in (self.fig_seeds, self.fig_fov, self.fig_detail):
+            fig.set_facecolor(self.PLOT_BG)
+
+        for ax in (self.ax_seeds, self.ax_fov, self.ax_roi, self.ax_metrics):
+            ax.set_facecolor(self.PLOT_BG)
+
+        for ax in (self.ax_hist, self.ax_trace):
+            ax.set_facecolor(self.AX_BG)
+            ax.tick_params(colors=self.FG_MUTED)
+            for sp_name in ("top", "bottom", "left", "right"):
+                ax.spines[sp_name].set_color(self.FG_MUTED)
+
+        if hasattr(self, "line_raw"):
+            self.line_raw.set_color(self.LINE_RAW_COLOR)
+        if hasattr(self, "line_trace"):
+            self.line_trace.set_color(self.LINE_TRACE_COLOR)
+        if hasattr(self, "ax_trace"):
+            self.ax_trace.xaxis.label.set_color(self.FG_MUTED)
+            self.ax_trace.yaxis.label.set_color(self.FG_MUTED)
+
+        for tb in (getattr(self, "toolbar_seeds", None), getattr(self, "toolbar_fov", None), getattr(self, "toolbar_detail", None)):
+            if tb is not None:
+                try:
+                    tb.config(background=self.BG_CARD)
+                except Exception:
+                    pass
+
+        for cv in (getattr(self, "canvas_seeds", None), getattr(self, "canvas_fov", None), getattr(self, "canvas_detail", None)):
+            if cv is not None:
+                cv.draw_idle()
 
     def _setup_logging(self):
         gui_handler = QueueHandler(self.log_queue)
@@ -282,6 +374,16 @@ class DecovoApp(tk.Tk):
 
         self.lbl_active_file = ttk.Label(toolbar, text="No recording loaded", font=("Segoe UI", 9, "italic"), foreground=self.FG_MUTED)
         self.lbl_active_file.pack(side=tk.LEFT, padx=10)
+
+        # Day / Night Theme Switcher
+        theme_txt = "☀️ Day Mode" if self.is_dark_mode else "🌙 Night Mode"
+        self.btn_theme_toggle = ttk.Button(
+            toolbar,
+            text=theme_txt,
+            style="Theme.TButton",
+            command=self.toggle_theme,
+        )
+        self.btn_theme_toggle.pack(side=tk.RIGHT, padx=6)
 
         # Actions on Right (Handoff & Save)
         btn_open_curator = ttk.Button(
@@ -535,6 +637,8 @@ class DecovoApp(tk.Tk):
 
     def _draw_seed_plot(self):
         self.ax_seeds.clear()
+        self.ax_seeds.set_facecolor(self.PLOT_BG)
+        self.fig_seeds.set_facecolor(self.PLOT_BG)
         if self.session is None or self.session.cn is None:
             self.ax_seeds.text(0.5, 0.5, "Run Stage A to generate Cn and PNR summary images",
                                ha="center", va="center", color=self.FG_MUTED, transform=self.ax_seeds.transAxes)
@@ -1117,7 +1221,8 @@ class DecovoApp(tk.Tk):
 
         # 3. Histogram
         self.ax_hist.clear()
-        self.ax_hist.hist(self.peak_counts, bins=25, color="#3b82f6", alpha=0.7, edgecolor="#1e1e1e")
+        self.ax_hist.set_facecolor(self.AX_BG)
+        self.ax_hist.hist(self.peak_counts, bins=25, color="#3b82f6", alpha=0.7, edgecolor=self.BG_CARD)
         try:
             min_p = int(self.spn_filter_peaks.get())
             self.ax_hist.axvline(min_p, color="#ef4444", linestyle="--", linewidth=1.5, label="Min Peaks Cutoff")
@@ -1126,8 +1231,16 @@ class DecovoApp(tk.Tk):
         self.ax_hist.axvline(p_v, color="#f59e0b", linewidth=2.0, label="Current Cell")
         self.ax_hist.set_title("Population Activity Peaks", fontsize=8, fontweight="bold", color=self.FG_TEXT)
         self.ax_hist.tick_params(colors=self.FG_MUTED, labelsize=7)
+        for sp_name in ("top", "bottom", "left", "right"):
+            self.ax_hist.spines[sp_name].set_color(self.FG_MUTED)
 
         # 4. Traces
+        self.ax_trace.set_facecolor(self.AX_BG)
+        for sp_name in ("top", "bottom", "left", "right"):
+            self.ax_trace.spines[sp_name].set_color(self.FG_MUTED)
+        self.ax_trace.tick_params(colors=self.FG_MUTED, labelsize=8)
+        self.ax_trace.grid(True, linestyle=":", alpha=0.3, color=self.GRID_COLOR)
+
         c_trace = est.C[idx]
         if hasattr(est, "YrA") and est.YrA is not None and len(est.YrA) > idx:
             raw_trace = c_trace + est.YrA[idx]
@@ -1136,7 +1249,9 @@ class DecovoApp(tk.Tk):
 
         frames = np.arange(len(c_trace))
         self.line_raw.set_data(frames, raw_trace)
+        self.line_raw.set_color(self.LINE_RAW_COLOR)
         self.line_trace.set_data(frames, c_trace)
+        self.line_trace.set_color(self.LINE_TRACE_COLOR)
 
         # Peaks
         p_idx = self.peak_indices[idx] if idx < len(self.peak_indices) else []

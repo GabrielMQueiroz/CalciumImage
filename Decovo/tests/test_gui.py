@@ -184,3 +184,30 @@ def test_gui_curator_navigation(mock_cnm):
             assert bool(app.accepted_mask[idx]) is True
     finally:
         app.destroy()
+
+
+def test_gui_theme_toggle():
+    """Test switching between Day and Night themes."""
+    try:
+        root = tk.Tk()
+        root.destroy()
+    except tk.TclError:
+        pytest.skip("Tkinter display not available in current environment")
+
+    app = DecovoApp()
+    try:
+        assert app.is_dark_mode is True
+        assert app.BG_MAIN == "#1e1e1e"
+
+        # Toggle to Day mode
+        app.toggle_theme()
+        assert app.is_dark_mode is False
+        assert app.BG_MAIN == "#f1f5f9"
+
+        # Toggle back to Night mode
+        app.toggle_theme()
+        assert app.is_dark_mode is True
+        assert app.BG_MAIN == "#1e1e1e"
+    finally:
+        app.destroy()
+
