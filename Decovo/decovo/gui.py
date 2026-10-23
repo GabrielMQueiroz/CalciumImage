@@ -368,11 +368,12 @@ class DecovoApp(tk.Tk):
         for ax in (self.ax_seeds, self.ax_fov, self.ax_roi, self.ax_metrics):
             ax.set_facecolor(self.PLOT_BG)
 
-        for ax in (self.ax_hist, self.ax_trace):
-            ax.set_facecolor(self.AX_BG)
-            ax.tick_params(colors=self.FG_MUTED)
-            for sp_name in ("top", "bottom", "left", "right"):
-                ax.spines[sp_name].set_color(self.FG_MUTED)
+        for ax in (getattr(self, "ax_corr_hist", None), getattr(self, "ax_pnr_hist", None), getattr(self, "ax_hist", None), getattr(self, "ax_trace", None)):
+            if ax is not None:
+                ax.set_facecolor(self.AX_BG)
+                ax.tick_params(colors=self.FG_MUTED)
+                for sp_name in ("top", "bottom", "left", "right"):
+                    ax.spines[sp_name].set_color(self.FG_MUTED)
 
         if hasattr(self, "line_raw"):
             self.line_raw.set_color(self.LINE_RAW_COLOR)
@@ -663,16 +664,51 @@ class DecovoApp(tk.Tk):
         )
         self.btn_run_stage_b.pack(side=tk.RIGHT, padx=6)
 
-        # Matplotlib Seed Plot
-        self.fig_seeds = Figure(figsize=(10, 6), dpi=100, facecolor=self.BG_MAIN)
-        self.ax_seeds = self.fig_seeds.add_subplot(111)
+        # Matplotlib Seed Plot + Correlation & PNR Interactive Histograms
+        self.fig_seeds = Figure(figsize=(11, 6), dpi=100, facecolor=self.BG_MAIN)
+        gs_seeds = self.fig_seeds.add_gridspec(2, 2, width_ratios=[1.6, 1.0], hspace=0.36, wspace=0.22)
+        self.ax_seeds = self.fig_seeds.add_subplot(gs_seeds[:, 0])
+        self.ax_corr_hist = self.fig_seeds.add_subplot(gs_seeds[0, 1])
+        self.ax_pnr_hist = self.fig_seeds.add_subplot(gs_seeds[1, 1])
+
         self.ax_seeds.set_facecolor(self.BG_MAIN)
+        self.ax_corr_hist.set_facecolor(self.AX_BG)
+        self.ax_pnr_hist.set_facecolor(self.AX_BG)
         self.ax_seeds.axis("off")
 
         self.canvas_seeds = FigureCanvasTkAgg(self.fig_seeds, master=self.tab_seeds)
         self.toolbar_seeds = NavigationToolbar2Tk(self.canvas_seeds, self.tab_seeds)
         self.toolbar_seeds.config(background=self.BG_CARD)
         self.canvas_seeds.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        self.canvas_seeds.mpl_connect("button_press_event", self._on_seed_canvas_click)
+        self.canvas_seeds.mpl_connect("motion_notify_event", self._on_seed_canvas_motion)
+
+    def _on_seed_canvas_click(self, event):
+        """Click on correlation or PNR histogram to interactively set threshold."""
+        if event.xdata is None or event.ydata is None:
+            return
+        if event.inaxes == self.ax_corr_hist:
+            new_corr = float(np.clip(event.xdata, 0.50, 0.98))
+            self.slider_corr.set(new_corr)
+            self._on_seed_slider_moved()
+        elif event.inaxes == self.ax_pnr_hist:
+            new_pnr = float(np.clip(event.xdata, 3.0, 30.0))
+            self.slider_pnr.set(new_pnr)
+            self._on_seed_slider_moved()
+
+    def _on_seed_canvas_motion(self, event):
+        """Drag across correlation or PNR histogram to dynamically adjust threshold."""
+        if event.button != 1 or event.xdata is None:
+            return
+        if event.inaxes == self.ax_corr_hist:
+            new_corr = float(np.clip(event.xdata, 0.50, 0.98))
+            self.slider_corr.set(new_corr)
+            self._on_seed_slider_moved()
+        elif event.inaxes == self.ax_pnr_hist:
+            new_pnr = float(np.clip(event.xdata, 3.0, 30.0))
+            self.slider_pnr.set(new_pnr)
+            self._on_seed_slider_moved()
 
     def _on_seed_slider_moved(self, _=None):
         corr = float(self.slider_corr.get())
@@ -717,6 +753,16 @@ class DecovoApp(tk.Tk):
         self.ax_seeds.set_facecolor(self.PLOT_BG)
         self.fig_seeds.set_facecolor(self.PLOT_BG)
 
+        self.ax_corr_hist.clear()
+        self.ax_corr_hist.set_facecolor(self.AX_BG)
+        self.ax_pnr_hist.clear()
+        self.ax_pnr_hist.set_facecolor(self.AX_BG)
+
+        for ax in (self.ax_corr_hist, self.ax_pnr_hist):
+            ax.tick_params(colors=self.FG_MUTED, labelsize=7)
+            for sp_name in ("top", "bottom", "left", "right"):
+                ax.spines[sp_name].set_color(self.FG_MUTED)
+
         Cn = self.session_cn
         PNR = self.session_pnr
 
@@ -732,15 +778,28 @@ class DecovoApp(tk.Tk):
                 transform=self.ax_seeds.transAxes,
             )
             self.ax_seeds.axis("off")
+
+            self.ax_corr_hist.text(
+                0.5, 0.5, "Correlation histogram will appear here",
+                ha="center", va="center", color=self.FG_MUTED, fontsize=8, transform=self.ax_corr_hist.transAxes
+            )
+            self.ax_corr_hist.set_axis_off()
+
+            self.ax_pnr_hist.text(
+                0.5, 0.5, "PNR histogram will appear here",
+                ha="center", va="center", color=self.FG_MUTED, fontsize=8, transform=self.ax_pnr_hist.transAxes
+            )
+            self.ax_pnr_hist.set_axis_off()
+
             self.canvas_seeds.draw_idle()
             return
 
+        # 1. 2D Summary Image with Seeds
         img = Cn if self.var_seed_view.get() == "Cn" else PNR
         cmap = "inferno" if self.var_seed_view.get() == "Cn" else "viridis"
 
         self.ax_seeds.imshow(img, cmap=cmap, aspect="equal", origin="upper")
         if len(self._seed_coords) > 0:
-            # coords are (row, col) = (y, x)
             self.ax_seeds.scatter(
                 self._seed_coords[:, 1],
                 self._seed_coords[:, 0],
@@ -752,11 +811,48 @@ class DecovoApp(tk.Tk):
                 linewidths=0.6,
             )
 
-        title = f"{self.var_seed_view.get()} Summary Image with Candidate Seeds ({len(self._seed_coords)} seeds)"
+        title = f"{self.var_seed_view.get()} Summary Image ({len(self._seed_coords)} candidate seeds)"
         self.ax_seeds.set_title(title, color=self.FG_TEXT, fontsize=10, fontweight="bold")
         self.ax_seeds.axis("off")
+
+        corr = float(self.slider_corr.get())
+        pnr_val = float(self.slider_pnr.get())
+
+        # 2. Correlation Histogram (Interactive Visual Picker)
+        valid_cn = Cn[np.isfinite(Cn)]
+        if valid_cn.size > 0:
+            counts, bin_edges = np.histogram(valid_cn, bins=45, range=(0.0, 1.0))
+            bar_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            bar_colors = ["#3b82f6" if b >= corr else ("#475569" if self.is_dark_mode else "#cbd5e1") for b in bar_centers]
+            self.ax_corr_hist.bar(bar_centers, np.maximum(counts, 0.5), width=bin_edges[1] - bin_edges[0], color=bar_colors, edgecolor=self.AX_BG, linewidth=0.5)
+            self.ax_corr_hist.axvline(corr, color="#ef4444", linestyle="--", linewidth=2.0, label=f"min_corr: {corr:.2f}")
+            self.ax_corr_hist.set_yscale("log")
+            self.ax_corr_hist.set_xlim(0.0, 1.0)
+            self.ax_corr_hist.set_title(f"Correlation Distribution (Click to set min_corr ≥ {corr:.2f})", fontsize=8, fontweight="bold", color=self.FG_TEXT)
+            self.ax_corr_hist.set_xlabel("Correlation (Cn)", fontsize=7, color=self.FG_MUTED)
+            self.ax_corr_hist.set_ylabel("Pixels (log)", fontsize=7, color=self.FG_MUTED)
+            self.ax_corr_hist.grid(True, linestyle=":", alpha=0.25, color=self.GRID_COLOR)
+            self.ax_corr_hist.legend(fontsize=7, loc="upper right")
+
+        # 3. PNR Histogram (Interactive Visual Picker)
+        valid_pnr = PNR[np.isfinite(PNR)]
+        if valid_pnr.size > 0:
+            max_p = max(float(np.nanpercentile(valid_pnr, 99.8)), pnr_val * 1.3, 20.0)
+            counts_p, bin_edges_p = np.histogram(valid_pnr, bins=45, range=(0.0, max_p))
+            bar_centers_p = (bin_edges_p[:-1] + bin_edges_p[1:]) / 2
+            bar_colors_p = ["#f59e0b" if b >= pnr_val else ("#475569" if self.is_dark_mode else "#cbd5e1") for b in bar_centers_p]
+            self.ax_pnr_hist.bar(bar_centers_p, np.maximum(counts_p, 0.5), width=bin_edges_p[1] - bin_edges_p[0], color=bar_colors_p, edgecolor=self.AX_BG, linewidth=0.5)
+            self.ax_pnr_hist.axvline(pnr_val, color="#ef4444", linestyle="--", linewidth=2.0, label=f"min_pnr: {pnr_val:.1f}")
+            self.ax_pnr_hist.set_yscale("log")
+            self.ax_pnr_hist.set_xlim(0.0, max_p)
+            self.ax_pnr_hist.set_title(f"PNR Distribution (Click to set min_pnr ≥ {pnr_val:.1f})", fontsize=8, fontweight="bold", color=self.FG_TEXT)
+            self.ax_pnr_hist.set_xlabel("Peak-to-Noise Ratio (PNR)", fontsize=7, color=self.FG_MUTED)
+            self.ax_pnr_hist.set_ylabel("Pixels (log)", fontsize=7, color=self.FG_MUTED)
+            self.ax_pnr_hist.grid(True, linestyle=":", alpha=0.25, color=self.GRID_COLOR)
+            self.ax_pnr_hist.legend(fontsize=7, loc="upper right")
+
         try:
-            self.fig_seeds.tight_layout()
+            self.fig_seeds.subplots_adjust(top=0.94, bottom=0.08, left=0.04, right=0.96, wspace=0.25, hspace=0.38)
         except Exception:
             pass
         self.canvas_seeds.draw_idle()

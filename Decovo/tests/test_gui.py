@@ -139,6 +139,16 @@ def test_gui_seed_preview():
         app._update_seed_preview()
         assert len(app._seed_coords) == 3
         assert "Seeds: 3" in app.lbl_seed_count.cget("text")
+
+        # Test interactive click on Correlation histogram updates min_corr
+        event_corr = SimpleNamespace(xdata=0.92, ydata=10, inaxes=app.ax_corr_hist, button=1)
+        app._on_seed_canvas_click(event_corr)
+        assert abs(float(app.slider_corr.get()) - 0.92) < 1e-3
+
+        # Test interactive click on PNR histogram updates min_pnr
+        event_pnr = SimpleNamespace(xdata=15.0, ydata=5, inaxes=app.ax_pnr_hist, button=1)
+        app._on_seed_canvas_click(event_pnr)
+        assert abs(float(app.slider_pnr.get()) - 15.0) < 1e-3
     finally:
         app.destroy()
 
